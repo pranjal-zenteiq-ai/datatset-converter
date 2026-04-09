@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+import os
+import json
+from typing import Any, Dict, List
+
+import pandas as pd
+from temporalio import activity, workflow
+from temporalio.client import Client
+from temporalio.worker import Worker
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+
+TARGET_ROLES = ["system", "user", "assistant", "tool"]
+
+
+def to_message_list(system: str = "", user: str = "", assistant: str = "", tool: str = "") -> List[Dict[str, str]]:
+    return [
+        {"role": "system", "content": system or ""},
+        {"role": "user", "content": user or ""},
+        {"role": "assistant", "content": assistant or ""},
+        {"role": "tool", "content": tool or ""},
+    ]
+
+
+def safe_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if pd.isna(value):
+        return ""
+    return str(value)
+
+
+@activity.defn
+async def profile_dataset(local_path: str) -> Dict[str, Any]:
+    if local_path.endswith(".parquet"):
+        df = pd.read_parquet(local_path)
+    else:
+        df = pd.read_csv(local_path)
+
+    return {
+        "columns": list(df.columns),
+        "dtypes": {c: str(t) for c, t in df.dtypes.items()},
+        "null_counts": {c: int(df[c].isna().sum()) for c in df.columns},
+        "head": df.head(5).fillna("").to_dict(orient="records"),
+        "sample_rows": min(len(df), 5),
+        "row_count": int(len(df)),
+    }
+
+
+@activity.defn
+async def kimi_generate_plan(dataset_name: str, profile: Dict[str, Any]) -> Dict[str, Any]:
+    client = ChatNVIDIA(
+        model="moonshotai/kimi-k2-thinking",
+        api_key=os.environ["NVIDIA_API_KEY"],
+        temperature=0,
+        top_p=1,
+        max_tokens=8192,
+    )
+
+    prompt = f"""
+You are analyzing one dataset for conversion into a fixed chat-message format.
+
+Target output for each record must be exactly:
+[
+  {{"role":"system","content":""}},
+  {{"role":"user","content":""}},
+  {{"role":"assistant","content":""}},
+  {{"role":"tool","content":""}}
+]
+
+Rules:
+- Do not invent any content.
+- Do not invent any columns.
+- If a role is absent, leave it empty.
+- Ignore unrelated columns.
+- If the dataset already has a conversations/messages list, map from that.
+- Return JSON only.
+- First line must include: CONFIRMED_OK
+- Then return a JSON object with:
+  {{
+    "confirmed": true,
+    "strategy": "...",
+    "row_extraction": "...",
+    "column_to_role": {{}},
+    "ignore_columns": [],
+    "notes": []
+  }}
+
+Dataset: {dataset_name}
+Profile:
+{json.dumps(profile, ensure_ascii=False)}
+"""
+
+    resp = await client.ainvoke(prompt)
+    text = (resp.content or "").strip()
+
+    if "CONFIRMED_OK" not in text:
+        raise ValueError("Kimi did not confirm the plan")
+
+    json_start = text.find("{")
+    if json_start == -1:
+        raise ValueError("Kimi did not return JSON")
+
+    plan = json.loads(text[json_start:])
+    if not plan.get("confirmed", False):
+        raise ValueError("Plan was not confirmed")
+
+    return plan
+
+
+@activity.defn
+async def kimi_generate_transformer_script(dataset_name: str, profile: Dict[str, Any], plan: Dict[str, Any]) -> str:
+    client = ChatNVIDIA(
+        model="moonshotai/kimi-k2-thinking",
+        api_key=os.environ["NVIDIA_API_KEY"],
+        temperature=0,
+        top_p=1,
+        max_tokens=16384,
+    )
+
+    prompt = f"""
+Write a robust Python script that converts this dataset into the exact output format:
+[
+  {{"role":"system","content":""}},
+  {{"role":"user","content":""}},
+  {{"role":"assistant","content":""}},
+  {{"role":"tool","content":""}}
+]
+
+Dataset: {dataset_name}
+Profile:
+{json.dumps(profile, ensure_ascii=False)}
+
+Plan:
+{json.dumps(plan, ensure_ascii=False)}
+
+Requirements:
+- Use only real columns / real nested fields.
+- Skip irrelevant source data.
+- Missing roles must remain empty strings.
+- Output JSONL.
+- Include strong validation.
+- Include chunked processing.
+- Include retries-safe, idempotent file writing.
+- No placeholder fake fields.
+- Return only Python code.
+"""
+
+    resp = await client.ainvoke(prompt)
+    return resp.content
+
+
+@activity.defn
+async def validate_script(script: str) -> Dict[str, Any]:
+    banned = ["import os; os.remove", "subprocess", "eval(", "exec("]
+    for item in banned:
+        if item in script:
+            raise ValueError(f"Unsafe script content detected: {item}")
+    return {"ok": True}
+
+
+@activity.defn
+async def run_transform_script(script: str, local_path: str, output_path: str) -> str:
+    namespace: Dict[str, Any] = {}
+    exec(script, namespace, namespace)
+    if "convert_dataset" not in namespace:
+        raise ValueError("Script must define convert_dataset(input_path, output_path)")
+    namespace["convert_dataset"](local_path, output_path)
+    return output_path
+
+
+@activity.defn
+async def validate_output_schema(output_path: str) -> Dict[str, Any]:
+    df = pd.read_json(output_path, lines=True)
+    required = {"role", "content"}
+    ok = set(df.columns) == required and set(df["role"].dropna().unique()).issubset(set(TARGET_ROLES))
+    return {"ok": ok, "rows": int(len(df)), "columns": list(df.columns)}
+
+
+@workflow.defn
+class DatasetSFTWorkflow:
+    @workflow.run
+    async def run(self, dataset_name: str, local_path: str, output_path: str) -> str:
+        profile = await workflow.execute_activity(
+            profile_dataset,
+            local_path,
+            start_to_close_timeout=120,
+        )
+
+        plan = await workflow.execute_activity(
+            kimi_generate_plan,
+            dataset_name,
+            profile,
+            start_to_close_timeout=600,
+        )
+
+        script = await workflow.execute_activity(
+            kimi_generate_transformer_script,
+            dataset_name,
+            profile,
+            plan,
+            start_to_close_timeout=900,
+        )
+
+        await workflow.execute_activity(
+            validate_script,
+            script,
+            start_to_close_timeout=60,
+        )
+
+        result = await workflow.execute_activity(
+            run_transform_script,
+            script,
+            local_path,
+            output_path,
+            start_to_close_timeout=7200,
+        )
+
+        validation = await workflow.execute_activity(
+            validate_output_schema,
+            result,
+            start_to_close_timeout=120,
+        )
+
+        if not validation["ok"]:
+            raise ValueError(f"Invalid output schema: {validation}")
+
+        return result
