@@ -22,11 +22,13 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
-import pandas as pd
-import pyarrow.parquet as pq
-from dotenv import load_dotenv
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from temporalio import activity, workflow
+
+with workflow.unsafe.imports_passed_through():
+    import pandas as pd
+    import pyarrow.parquet as pq
+    from dotenv import load_dotenv
+    from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
 load_dotenv()
 
@@ -270,13 +272,13 @@ Profile (schema + 5 sample rows):
 
 
 @activity.defn
-async def kimi_generate_plan(dataset_name: str, profile: Dict[str, Any]) -> Dict[str, Any]:
+def kimi_generate_plan(dataset_name: str, profile: Dict[str, Any]) -> Dict[str, Any]:
     client = _build_llm(max_tokens=8192)
     prompt = _PLAN_PROMPT.format(
         dataset_name=dataset_name,
         profile_json=json.dumps(profile, ensure_ascii=False, indent=2),
     )
-    response = await client.ainvoke(prompt)
+    response = client.invoke(prompt)
     plan = _extract_json_object(response.content or "")
     if not plan.get("confirmed", False):
         raise ValueError("Kimi did not confirm the plan — check model response")
@@ -361,7 +363,7 @@ def _clean_generated_script(raw: str) -> str:
 
 
 @activity.defn
-async def kimi_generate_transformer_script(
+def kimi_generate_transformer_script(
     dataset_name: str,
     profile: Dict[str, Any],
     plan: Dict[str, Any],
@@ -373,7 +375,7 @@ async def kimi_generate_transformer_script(
         profile_json=json.dumps(profile, ensure_ascii=False, indent=2),
         plan_json=json.dumps(plan, ensure_ascii=False, indent=2),
     )
-    response = await client.ainvoke(prompt)
+    response = client.invoke(prompt)
     raw = response.content or ""
     if "CONFIRMED_OK" not in raw:
         raise ValueError("Kimi did not confirm the script (missing CONFIRMED_OK)")

@@ -1,0 +1,5 @@
+Temporal CLI 1.6.2 (Server 1.30.2, UI 2.45.3)
+
+Temporal Server:  localhost:7233
+Temporal UI:      http://localhost:8233
+Temporal Metrics: http://localhost:44907/metrics

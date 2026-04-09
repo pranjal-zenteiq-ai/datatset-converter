@@ -32,6 +32,8 @@ async def main() -> None:
     print(f"[worker] Connecting to Temporal at {address} …")
     client = await Client.connect(address)
 
+    import concurrent.futures
+
     worker = Worker(
         client,
         task_queue=TASK_QUEUE,
@@ -43,6 +45,7 @@ async def main() -> None:
             run_transform_script,
             validate_output_file,
         ],
+        activity_executor=concurrent.futures.ThreadPoolExecutor(max_workers=20),
     )
 
     print(f"[worker] Listening on task queue '{TASK_QUEUE}' — Ctrl-C to stop.")
