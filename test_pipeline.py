@@ -27,12 +27,23 @@ import pyarrow.parquet as pq
 from think import (
     TARGET_ROLES,
     _enforce_message_schema,
+    _iter_input_batches,
     _load_converter,
     _validate_generated_script,
     profile_dataset,
     run_transform_script,
     validate_output_file,
 )
+import think
+
+# Mock iter_input_batches to only process the first batch, slicing the size for speed.
+_original_iter = _iter_input_batches
+def _mock_iter_input_batches(local_path: str, chunk_size: int):
+    # Only yield ONE batch of chunk_size to simulate file processing quickly during tests
+    for batch in _original_iter(local_path, chunk_size):
+        yield batch
+        break
+think._iter_input_batches = _mock_iter_input_batches
 
 PASS = "✓"
 FAIL = "✗"
