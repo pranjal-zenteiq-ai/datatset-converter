@@ -1,0 +1,14 @@
+warning: The `tool.uv.dev-dependencies` field (used in `pyproject.toml`) is deprecated and will be removed in a future release; use `dependency-groups.dev` instead
+[runner] Connecting to Temporal at localhost:7233 …
+
+[runner] ▶  Launching: convert-totally-not-an-llm-everythinglm-data-v3
+[runner] ▶  Launching: convert-microsoft-orca-math-word-problems-200k
+[runner] ▶  Launching: convert-qintongli-gsm-plus-v0
+[runner] ▶  Launching: convert-vezora-tested-143k-python-alpaca
+[runner] ▶  Launching: convert-ldjnr-puffin
+[runner] ▶  Launching: convert-roneneldan-tinystories
+[runner] ▶  Launching: convert-nvidia-helpsteer2
+[runner] ▶  Launching: convert-allenai-tulu-3-sft-mixture
+
+[runner] All 8 workflows launched. Waiting for results...
+

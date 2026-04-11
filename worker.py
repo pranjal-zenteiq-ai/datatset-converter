@@ -16,9 +16,9 @@ from temporalio.worker import Worker
 from think import (
     DatasetSFTWorkflow,
     kimi_generate_plan,
-    kimi_generate_transformer_script,
     profile_dataset,
     run_transform_script,
+    save_transformer_script,
     validate_output_file,
 )
 
@@ -32,8 +32,7 @@ async def main() -> None:
     print(f"[worker] Connecting to Temporal at {address} …")
     client = await Client.connect(address)
 
-    import concurrent.futures
-
+    # Increase capacity for production load
     worker = Worker(
         client,
         task_queue=TASK_QUEUE,
@@ -41,14 +40,15 @@ async def main() -> None:
         activities=[
             profile_dataset,
             kimi_generate_plan,
-            kimi_generate_transformer_script,
+            save_transformer_script,
             run_transform_script,
             validate_output_file,
         ],
-        activity_executor=concurrent.futures.ThreadPoolExecutor(max_workers=20),
+        max_concurrent_activities=200,
+        max_concurrent_workflow_tasks=100,
     )
 
-    print(f"[worker] Listening on task queue '{TASK_QUEUE}' — Ctrl-C to stop.")
+    print(f"[worker] Listening on task queue '{TASK_QUEUE}' (capacity: 200) — Ctrl-C to stop.")
     await worker.run()
 
 

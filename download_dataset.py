@@ -3,11 +3,15 @@ import os
 import time
 
 datasets = [
-    ("meta-math/MetaMathQA", "metamath"),
-    ("ise-uiuc/Magicoder-Evol-Instruct-110K", "magicoder"),
-    ("allenai/tulu-v2-sft-mixture", "tulu"),
-    ("teknium/OpenHermes-2.5", "openhermes"),
+    ("totally-not-an-llm/EverythingLM-data-V3", "everythinglm"),
+    ("microsoft/orca-math-word-problems-200k", "orca"),
+    ("qintongli/GSM-Plus-v0", "gsm"),
+    ("Vezora/Tested-143k-Python-Alpaca", "python_alpaca"),
     ("LDJnr/Puffin", "puffin"),
+    ("roneneldan/TinyStories", "tinystories"),
+    ("nvidia/HelpSteer2", "nemotron"),
+    ("allenai/tulu-3-sft-mixture", "tulu3"),
+    ("infly/OpenCoder-Instruction", "opencoder"),
 ]
 
 os.makedirs("data", exist_ok=True)
@@ -17,7 +21,12 @@ def download_with_retry(name, retries=3, delay=5):
     for attempt in range(retries):
         try:
             print(f"Downloading {name} (Attempt {attempt+1})...")
-            ds = load_dataset(name, split="train")
+            # For some datasets we might need a specific split or subset
+            if name == "nvidia/HelpSteer2":
+               # HelpSteer2 usually requires handling
+               ds = load_dataset(name, split="train")
+            else:
+               ds = load_dataset(name, split="train")
             return ds
         except Exception as e:
             print(f"Error: {e}")
@@ -37,10 +46,15 @@ for name, short in datasets:
 
     try:
         ds = download_with_retry(name)
-    except:
-        ds = load_dataset(name)
-        split = list(ds.keys())[0]
-        ds = ds[split]
+    except Exception as e:
+        print(f"Standard download failed for {name}: {e}. Trying full load...")
+        try:
+            ds = load_dataset(name)
+            split = list(ds.keys())[0]
+            ds = ds[split]
+        except Exception as e2:
+            print(f"Failed to load {name} even with full load: {e2}. Skipping.")
+            continue
 
     ds.to_parquet(path)
     print(f"Saved {name} → {path}\n")

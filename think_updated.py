@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import ast
 import json
 import os
 import re
@@ -409,17 +409,14 @@ def _preview_csv(path: str, n: int = 5) -> Dict[str, Any]:
 
 
 @activity.defn
-async def profile_dataset(local_path: str) -> Dict[str, Any]:
-    def _run() -> Dict[str, Any]:
-        if not Path(local_path).exists():
-            raise FileNotFoundError(f"Input file not found: {local_path}")
-        if local_path.endswith(".parquet"):
-            return _preview_parquet(local_path, n=5)
-        if local_path.endswith(".csv"):
-            return _preview_csv(local_path, n=5)
-        raise ValueError(f"Unsupported input format: {local_path}")
-
-    return await asyncio.to_thread(_run)
+def profile_dataset(local_path: str) -> Dict[str, Any]:
+    if not Path(local_path).exists():
+        raise FileNotFoundError(f"Input file not found: {local_path}")
+    if local_path.endswith(".parquet"):
+        return _preview_parquet(local_path, n=5)
+    if local_path.endswith(".csv"):
+        return _preview_csv(local_path, n=5)
+    raise ValueError(f"Unsupported input format: {local_path}")
 
 
 _PLAN_PROMPT = """You are a dataset schema analyst.
@@ -429,10 +426,10 @@ Do not invent any text. Do not write code. Return only valid JSON.
 
 Normalized output shape per row:
 [
-  {{"role":"system","content":"..."}},
-  {{"role":"user","content":"..."}},
-  {{"role":"assistant","content":"..."}},
-  {{"role":"tool","content":"..."}}
+  {"role":"system","content":"..."},
+  {"role":"user","content":"..."},
+  {"role":"assistant","content":"..."},
+  {"role":"tool","content":"..."}
 ]
 
 Important rules:
@@ -445,22 +442,22 @@ Important rules:
 - If conversation data is spread across top-level columns, identify exact field-to-role mappings from the sample values, not from column names alone.
 
 Return exactly one JSON object with these keys:
-{{
+{
   "confirmed": true,
   "strategy": "messages_list" | "flat_columns" | "mixed",
   "conversation_field_candidates": [],
   "role_key": null,
   "content_key": null,
-  "role_aliases": {{
+  "role_aliases": {
     "system": [],
     "user": [],
     "assistant": [],
     "tool": []
-  }},
-  "field_to_role": {{}},
+  },
+  "field_to_role": {},
   "ordered_top_level_fields": [],
   "notes": []
-}}
+}
 
 Dataset name: {dataset_name}
 
@@ -470,13 +467,13 @@ Profile (schema + 5 sample rows):
 
 
 @activity.defn
-async def kimi_generate_plan(dataset_name: str, profile: Dict[str, Any]) -> Dict[str, Any]:
+def kimi_generate_plan(dataset_name: str, profile: Dict[str, Any]) -> Dict[str, Any]:
     client = _build_llm(max_tokens=8192)
     prompt = _PLAN_PROMPT.format(
         dataset_name=dataset_name,
         profile_json=json.dumps(profile, ensure_ascii=False, indent=2),
     )
-    response = await client.ainvoke(prompt)
+    response = client.invoke(prompt)
     plan = _extract_json_object(response.content or "")
     if not plan.get("confirmed", False):
         raise ValueError("Kimi did not confirm the plan — check model response")
@@ -518,7 +515,7 @@ def _write_error_record(
 
 
 @activity.defn
-async def run_transform_script(
+def run_transform_script(
     plan: Dict[str, Any],
     local_path: str,
     output_path: str,
@@ -528,61 +525,75 @@ async def run_transform_script(
     if error_path is None or not str(error_path).strip():
         error_path = _derive_error_path(output_path)
 
-    def _run_sync() -> Dict[str, Any]:
-        input_file = Path(local_path)
-        output_file = Path(output_path)
-        error_file = Path(error_path)  # type: ignore[arg-type]
+    input_file = Path(local_path)
+    output_file = Path(output_path)
+    error_file = Path(error_path)
 
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        error_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    error_file.parent.mkdir(parents=True, exist_ok=True)
 
-        total_rows = 0
-        written_rows = 0
-        errored_rows = 0
+    total_rows = 0
+    written_rows = 0
+    errored_rows = 0
 
-        with tempfile.NamedTemporaryFile(
-            "w", delete=False, dir=output_file.parent, suffix=".jsonl", encoding="utf-8"
-        ) as tmp_out, tempfile.NamedTemporaryFile(
-            "w", delete=False, dir=error_file.parent, suffix=".jsonl", encoding="utf-8"
-        ) as tmp_err:
-            tmp_out_path = Path(tmp_out.name)
-            tmp_err_path = Path(tmp_err.name)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        delete=False,
+        dir=output_file.parent,
+        suffix=".jsonl",
+        encoding="utf-8",
+    ) as tmp_out, tempfile.NamedTemporaryFile(
+        "w",
+        delete=False,
+        dir=error_file.parent,
+        suffix=".jsonl",
+        encoding="utf-8",
+    ) as tmp_err:
+        tmp_out_path = Path(tmp_out.name)
+        tmp_err_path = Path(tmp_err.name)
 
+        try:
+            for batch in _iter_input_batches(str(input_file), chunk_size):
+                for record in batch:
+                    try:
+                        converted = _extract_messages_from_record(record, plan, total_rows)
+                        if not converted:
+                            raise ValueError("no messages extracted")
+
+                        tmp_out.write(json.dumps(converted, ensure_ascii=False) + "\n")
+                        written_rows += 1
+                    except Exception as exc:
+                        errored_rows += 1
+                        _write_error_record(tmp_err, total_rows, exc, record)
+
+                    total_rows += 1
+
+            tmp_out.flush()
+            tmp_err.flush()
+            os.fsync(tmp_out.fileno())
+            os.fsync(tmp_err.fileno())
+
+        except Exception:
             try:
-                for batch in _iter_input_batches(str(input_file), chunk_size):
-                    for record in batch:
-                        try:
-                            converted = _extract_messages_from_record(record, plan, total_rows)
-                            if not converted:
-                                raise ValueError("no messages extracted")
-                            tmp_out.write(json.dumps(converted, ensure_ascii=False) + "\n")
-                            written_rows += 1
-                        except Exception as exc:
-                            errored_rows += 1
-                            _write_error_record(tmp_err, total_rows, exc, record)
-                        total_rows += 1
-
-                tmp_out.flush()
-                tmp_err.flush()
-                os.fsync(tmp_out.fileno())
-                os.fsync(tmp_err.fileno())
-
-            except Exception:
                 tmp_out_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            try:
                 tmp_err_path.unlink(missing_ok=True)
-                raise
+            except Exception:
+                pass
+            raise
 
-        tmp_out_path.replace(output_file)
-        tmp_err_path.replace(error_file)
-        return {
-            "output_path": str(output_file),
-            "error_path": str(error_file),
-            "rows_seen": total_rows,
-            "rows_written": written_rows,
-            "rows_errored": errored_rows,
-        }
+    tmp_out_path.replace(output_file)
+    tmp_err_path.replace(error_file)
 
-    return await asyncio.to_thread(_run_sync)
+    return {
+        "output_path": str(output_file),
+        "error_path": str(error_file),
+        "rows_seen": total_rows,
+        "rows_written": written_rows,
+        "rows_errored": errored_rows,
+    }
 
 
 def _validate_message_array(item: Any, row_index: int) -> None:
@@ -612,174 +623,28 @@ def _validate_message_array(item: Any, row_index: int) -> None:
 
 
 @activity.defn
-async def validate_output_file(output_path: str, sample_rows: int = 25) -> Dict[str, Any]:
-    def _run_sync() -> Dict[str, Any]:
-        path = Path(output_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Output file not found: {output_path}")
-        validated = 0
-        with path.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                if validated >= sample_rows:
-                    break
-                line = line.strip()
-                if not line:
-                    continue
-                parsed = json.loads(line)
-                _validate_message_array(parsed, validated)
-                validated += 1
-        return {"ok": True, "rows_sampled": validated, "path": str(output_path)}
+def validate_output_file(output_path: str, sample_rows: int = 25) -> Dict[str, Any]:
+    path = Path(output_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Output file not found: {output_path}")
 
-    return await asyncio.to_thread(_run_sync)
+    validated = 0
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            if validated >= sample_rows:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            parsed = json.loads(line)
+            _validate_message_array(parsed, validated)
+            validated += 1
 
-
-_TRANSFORMER_TEMPLATE = """\"\"\"
-Transformer script for: {dataset_name}
-Generated by Dataset Converter Pipeline
-\"\"\"
-import json
-import logging
-from typing import Any, Dict, List, Optional, Tuple, Iterable
-
-# --- Plan from Kimi ---
-PLAN = {plan_json}
-
-# --- Standard Normalization Functions ---
-
-TARGET_ROLES = ("system", "user", "assistant", "tool")
-
-ROLE_ALIASES = {{
-    "system": {{"system", "sys", "instruction", "prompt", "context"}},
-    "user": {{"user", "human", "client", "customer", "question", "input"}},
-    "assistant": {{"assistant", "gpt", "bot", "ai", "model", "completion", "answer", "response"}},
-    "tool": {{"tool", "function", "tool_call", "tool_result", "observation", "plugin"}},
-}}
-
-ROLE_KEY_CANDIDATES = ("role", "from", "speaker", "author", "sender", "type")
-CONTENT_KEY_CANDIDATES = ("content", "value", "text", "message", "body", "parts")
-JSON_CONTAINER_KEYS = ("messages", "message", "conversations", "conversation", "dialogue", "dialog", "turns", "history")
-
-def _to_jsonable(value: Any) -> Any:
-    if value is None: return None
-    if isinstance(value, (str, int, float, bool)): return value
-    if isinstance(value, dict): return {{str(k): _to_jsonable(v) for k, v in value.items()}}
-    if isinstance(value, (list, tuple, set)): return [_to_jsonable(v) for v in value]
-    return str(value)
-
-def _serialize_content(value: Any) -> str:
-    if isinstance(value, str): return value
-    try: return json.dumps(_to_jsonable(value), ensure_ascii=False)
-    except: return str(value)
-
-def _maybe_parse_json_string(value: Any) -> Any:
-    if not isinstance(value, str): return value
-    text = value.strip()
-    if not text or text[:1] not in {{"[", "{{"}}: return value
-    try: return json.loads(text)
-    except: return value
-
-def _normalize_role(value: Any, role_aliases: Optional[Dict[str, Iterable[str]]] = None) -> Optional[str]:
-    if value is None: return None
-    text = str(value).strip().lower()
-    aliases = role_aliases or ROLE_ALIASES
-    for canonical, names in aliases.items():
-        if text == canonical or text in names: return canonical
-    return None
-
-def _lookup_key_case_insensitive(mapping: Dict[str, Any], target: str) -> Optional[str]:
-    target_norm = str(target).strip().lower()
-    for key in mapping.keys():
-        if str(key).strip().lower() == target_norm: return key
-    return None
-
-def _is_message_like_dict(obj: Any) -> bool:
-    if not isinstance(obj, dict): return False
-    keys = {{str(k).strip().lower() for k in obj.keys()}}
-    return bool(keys.intersection(ROLE_KEY_CANDIDATES) and keys.intersection(CONTENT_KEY_CANDIDATES))
-
-def _unwrap_message_container(value: Any) -> Optional[List[Any]]:
-    value = _maybe_parse_json_string(value)
-    if isinstance(value, list):
-        return value if any(isinstance(i, dict) for i in value) else None
-    if isinstance(value, dict):
-        for k in JSON_CONTAINER_KEYS:
-            rk = _lookup_key_case_insensitive(value, k)
-            if rk and isinstance(value[rk], list): return value[rk]
-        if _is_message_like_dict(value): return [value]
-    return None
-
-def _normalize_aliases(spec: Dict[str, Any]) -> Dict[str, set[str]]:
-    res = {{r: set(v) for r, v in ROLE_ALIASES.items()}}
-    raw = spec.get("role_aliases", {{}})
-    if isinstance(raw, dict):
-        for c, vs in raw.items():
-            cn = str(c).lower()
-            if cn in TARGET_ROLES:
-                if isinstance(vs, (list, tuple, set)): res[cn].update(str(v).lower() for v in vs if v)
-                elif vs: res[cn].add(str(vs).lower())
-    return res
-
-def transform_row(record: Dict[str, Any], row_idx: int = 0) -> List[Dict[str, str]]:
-    spec = PLAN
-    alias_map = _normalize_aliases(spec)
-    field_to_role = spec.get("field_to_role", {{}})
-    conversation_candidates = spec.get("conversation_field_candidates", [])
-    ordered_keys = spec.get("ordered_top_level_fields", list(record.keys()))
-    
-    candidate_keys = list(dict.fromkeys([*conversation_candidates, *ordered_keys]))
-    messages = []
-    
-    for field in candidate_keys:
-        if field not in record or record[field] is None: continue
-        
-        raw = record[field]
-        nested = _unwrap_message_container(raw)
-        if nested:
-            rk = spec.get("role_key") or "role"
-            ck = spec.get("content_key") or "content"
-            for item in nested:
-                if not isinstance(item, dict): continue
-                found_rk = _lookup_key_case_insensitive(item, rk)
-                found_ck = _lookup_key_case_insensitive(item, ck)
-                if found_rk and found_ck:
-                    role = _normalize_role(item.get(found_rk), alias_map)
-                    if role: messages.append({{"role": role, "content": _serialize_content(item.get(found_ck))}})
-            continue
-
-        role = field_to_role.get(field)
-        if role and role in TARGET_ROLES:
-            messages.append({{"role": role, "content": _serialize_content(raw)}})
-            
-    return messages
-
-# --- Example Usage ---
-if __name__ == "__main__":
-    test_record = {sample_record_json}
-    print("Plan Transformation Result:")
-    print(json.dumps(transform_row(test_record), indent=2))
-"""
-
-@activity.defn
-async def save_transformer_script(dataset_name: str, plan: Dict[str, Any], sample_record: Optional[Dict[str, Any]] = None) -> str:
-    def _run() -> str:
-        slug = re.sub(r'[^a-z0-0]+', '_', dataset_name.lower()).strip('_')
-        filename = f"transform_{slug}.py"
-        target_dir = Path("transformers")
-        target_dir.mkdir(exist_ok=True)
-        target_path = target_dir / filename
-        
-        content = _TRANSFORMER_TEMPLATE.format(
-            dataset_name=dataset_name,
-            plan_json=json.dumps(plan, indent=4, ensure_ascii=False),
-            sample_record_json=json.dumps(sample_record or {}, indent=4, ensure_ascii=False)
-        )
-        
-        with target_path.open("w", encoding="utf-8") as f:
-            f.write(content)
-        
-        return str(target_path)
-
-    return await asyncio.to_thread(_run)
+    return {
+        "ok": True,
+        "rows_sampled": validated,
+        "path": str(path),
+    }
 
 
 @workflow.defn
@@ -805,14 +670,6 @@ class DatasetSFTWorkflow:
             start_to_close_timeout=workflow.timedelta(seconds=900),
         )
 
-        # Save the plan as a standalone Python script for version control
-        sample_record = profile.get("head", [{}])[0] if profile.get("head") else {}
-        await workflow.execute_activity(
-            save_transformer_script,
-            args=[dataset_name, plan, sample_record],
-            start_to_close_timeout=workflow.timedelta(seconds=60),
-        )
-
         await workflow.execute_activity(
             run_transform_script,
             args=[plan, local_path, output_path, error_path, chunk_size],
@@ -824,7 +681,5 @@ class DatasetSFTWorkflow:
             args=[output_path],
             start_to_close_timeout=workflow.timedelta(seconds=300),
         )
-
-
 
         return output_path
