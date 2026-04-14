@@ -16,7 +16,7 @@ PLAN = {
         "response": "assistant"
     },
     "notes": [
-        "Rating columns (helpfulness, correctness, coherence, complexity, verbosity) are non-conversation metadata and should be ignored"
+        "Rating columns (helpfulness, correctness, coherence, complexity, verbosity) are metadata and not part of the conversation content."
     ],
     "ordered_top_level_fields": [
         "prompt",

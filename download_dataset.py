@@ -3,15 +3,10 @@ import os
 import time
 
 datasets = [
-    ("totally-not-an-llm/EverythingLM-data-V3", "everythinglm"),
-    ("microsoft/orca-math-word-problems-200k", "orca"),
-    ("qintongli/GSM-Plus-v0", "gsm"),
-    ("Vezora/Tested-143k-Python-Alpaca", "python_alpaca"),
-    ("LDJnr/Puffin", "puffin"),
-    ("roneneldan/TinyStories", "tinystories"),
-    ("nvidia/HelpSteer2", "nemotron"),
-    ("allenai/tulu-3-sft-mixture", "tulu3"),
-    ("infly/OpenCoder-Instruction", "opencoder"),
+    ("meta-math/MetaMathQA", "metamathqa"),
+    ("ise-uiuc/Magicoder-Evol-Instruct-110K", "magicoder_evol_instruct"),
+    ("allenai/tulu-v2-sft-mixture", "tulu_v2_sft_mixture"),
+    ("teknium/OpenHermes-2.5", "openhermes_2_5"),
 ]
 
 os.makedirs("data", exist_ok=True)

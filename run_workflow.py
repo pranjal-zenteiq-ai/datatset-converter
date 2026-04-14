@@ -22,14 +22,10 @@ TASK_QUEUE = "dataset-converter"
 
 # (hf_dataset_name, local_input_path, output_path)
 DATASETS: List[Tuple[str, str, str]] = [
-    ("totally-not-an-llm/EverythingLM-data-V3", "data/everythinglm.parquet", "output/everythinglm.jsonl"),
-    ("microsoft/orca-math-word-problems-200k", "data/orca.parquet", "output/orca.jsonl"),
-    ("qintongli/GSM-Plus-v0", "data/gsm.parquet", "output/gsm.jsonl"),
-    ("Vezora/Tested-143k-Python-Alpaca", "data/python_alpaca.parquet", "output/python_alpaca.jsonl"),
-    ("LDJnr/Puffin", "data/puffin.parquet", "output/puffin.jsonl"),
-    ("roneneldan/TinyStories", "data/tinystories.parquet", "output/tinystories.jsonl"),
-    ("nvidia/HelpSteer2", "data/nemotron.parquet", "output/nemotron.jsonl"),
-    ("allenai/tulu-3-sft-mixture", "data/tulu3.parquet", "output/tulu3.jsonl"),
+    ("meta-math/MetaMathQA", "data/metamathqa.parquet", "output/metamathqa.jsonl"),
+    ("ise-uiuc/Magicoder-Evol-Instruct-110K", "data/magicoder_evol_instruct.parquet", "output/magicoder_evol_instruct.jsonl"),
+    ("allenai/tulu-v2-sft-mixture", "data/tulu_v2_sft_mixture.parquet", "output/tulu_v2_sft_mixture.jsonl"),
+    ("teknium/OpenHermes-2.5", "data/openhermes_2_5.parquet", "output/openhermes_2_5.jsonl"),
 ]
 
 

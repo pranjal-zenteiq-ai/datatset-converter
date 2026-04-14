@@ -1,3 +1,1 @@
 warning: The `tool.uv.dev-dependencies` field (used in `pyproject.toml`) is deprecated and will be removed in a future release; use `dependency-groups.dev` instead
-[worker] Connecting to Temporal at localhost:7233 …
-[worker] Listening on task queue 'dataset-converter' (capacity: 200) — Ctrl-C to stop.

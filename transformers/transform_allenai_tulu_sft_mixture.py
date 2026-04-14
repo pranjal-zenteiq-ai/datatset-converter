@@ -17,10 +17,14 @@ PLAN = {
     "notes": [],
     "ordered_top_level_fields": [],
     "role_aliases": {
-        "assistant": [],
+        "assistant": [
+            "assistant"
+        ],
         "system": [],
         "tool": [],
-        "user": []
+        "user": [
+            "user"
+        ]
     },
     "role_key": "role",
     "strategy": "messages_list"

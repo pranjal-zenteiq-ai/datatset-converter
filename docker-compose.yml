@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  temporal:
+    image: temporalio/admin-tools:latest
+    command: ["temporal", "server", "start-dev", "--ip", "0.0.0.0", "--ui-ip", "0.0.0.0"]
+    ports:
+      - "7233:7233"
+      - "8080:8080"

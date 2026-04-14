@@ -15,9 +15,12 @@ PLAN = {
         "text": "assistant"
     },
     "notes": [
-        "Dataset contains a single 'text' column with narrative stories. Samples show third-person tales with occasional character dialogue, but no explicit conversation structure or role annotations. The content represents completed stories, typical of assistant-generated outputs. No system prompts, user queries, or tool calls are present in the data. The 'text' column holds a plain string per row, not a list of message dicts, so the flat_columns strategy is used. Each row converts to a single-message conversation array with role 'assistant'."
+        "Dataset contains single-column stories mapped as assistant responses",
+        "No user/system messages present in source data"
     ],
-    "ordered_top_level_fields": [],
+    "ordered_top_level_fields": [
+        "text"
+    ],
     "role_aliases": {
         "assistant": [],
         "system": [],

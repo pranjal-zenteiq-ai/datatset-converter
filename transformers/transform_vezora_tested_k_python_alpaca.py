@@ -17,11 +17,9 @@ PLAN = {
         "output": "assistant"
     },
     "notes": [
-        "Dataset follows the Alpaca format: instruction + optional input form the user message, output is the assistant response.",
-        "The 'input' field is frequently empty and should be skipped when empty.",
-        "No system message field exists in the source data.",
-        "User message construction: concatenate 'instruction' and 'input' (when non-empty) with a separator.",
-        "Assistant message is directly taken from the 'output' field."
+        "The 'instruction' and 'input' fields both map to the 'user' role and should be combined into a single user message. When 'input' is empty, only 'instruction' is used.",
+        "The 'output' field maps to the 'assistant' role.",
+        "No system or tool messages are present in this dataset."
     ],
     "ordered_top_level_fields": [
         "instruction",

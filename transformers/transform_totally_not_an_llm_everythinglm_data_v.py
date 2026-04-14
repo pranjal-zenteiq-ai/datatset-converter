@@ -16,9 +16,7 @@ PLAN = {
         "instruction": "user",
         "output": "assistant"
     },
-    "notes": [
-        "Standard instruction-tuning format: system prompt in 'input', user query in 'instruction', assistant response in 'output'. All three columns are present in every row. No tool calls or multi-turn conversations detected."
-    ],
+    "notes": [],
     "ordered_top_level_fields": [
         "input",
         "instruction",

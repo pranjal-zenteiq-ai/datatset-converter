@@ -12,3 +12,11 @@ warning: The `tool.uv.dev-dependencies` field (used in `pyproject.toml`) is depr
 
 [runner] All 8 workflows launched. Waiting for results...
 
+[runner] ✓  convert-totally-not-an-llm-everythinglm-data-v3: output/everythinglm.jsonl
+[runner] ✓  convert-microsoft-orca-math-word-problems-200k: output/orca.jsonl
+[runner] ✓  convert-qintongli-gsm-plus-v0: output/gsm.jsonl
+[runner] ✓  convert-vezora-tested-143k-python-alpaca: output/python_alpaca.jsonl
+[runner] ✓  convert-ldjnr-puffin: output/puffin.jsonl
+[runner] ✓  convert-roneneldan-tinystories: output/tinystories.jsonl
+[runner] ✓  convert-nvidia-helpsteer2: output/nemotron.jsonl
+[runner] ✓  convert-allenai-tulu-3-sft-mixture: output/tulu3.jsonl

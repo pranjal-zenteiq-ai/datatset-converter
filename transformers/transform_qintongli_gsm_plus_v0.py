@@ -16,8 +16,7 @@ PLAN = {
         "solution": "assistant"
     },
     "notes": [
-        "The 'answer' field is redundant with 'solution' (which includes '#### {answer}') and should be ignored for conversation reconstruction.",
-        "Metadata fields 'perturbation_type', 'seed_question', 'seed_solution', and 'seed_answer' should be ignored."
+        "The 'answer' field is redundant as the solution field already contains the final answer marked with ####. Fields 'perturbation_type', 'seed_question', 'seed_solution', and 'seed_answer' are metadata about dataset construction and not part of the conversation flow. Only 'question' (user role) and 'solution' (assistant role) are needed for the normalized conversation array."
     ],
     "ordered_top_level_fields": [
         "question",

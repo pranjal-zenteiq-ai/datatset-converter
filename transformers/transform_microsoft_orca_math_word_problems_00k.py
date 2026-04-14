@@ -16,22 +16,17 @@ PLAN = {
         "question": "user"
     },
     "notes": [
-        "Dataset contains single-turn Q&A pairs. Each row has a user question followed by an assistant answer.",
-        "No system messages or tool interactions present in the data."
+        "Simple Q&A format: question field contains user prompt, answer field contains assistant response. No system or tool messages present."
     ],
     "ordered_top_level_fields": [
         "question",
         "answer"
     ],
     "role_aliases": {
-        "assistant": [
-            "answer"
-        ],
+        "assistant": [],
         "system": [],
         "tool": [],
-        "user": [
-            "question"
-        ]
+        "user": []
     },
     "role_key": null,
     "strategy": "flat_columns"
